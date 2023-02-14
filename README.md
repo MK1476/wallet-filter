@@ -1,4 +1,4 @@
-# wallet-filter
+# Wallet-filter
 Scopex Intern Assignment - to Filter the Wallet addresses
 
 This project is a JavaScript program that downloads a list of Binance Smart Chain wallet addresses that meet certain criteria. Specifically, the program queries the Binance Smart Chain blockchain to find all addresses with a balance of at least 2 BNB tokens and at least one transaction in the last month, and then downloads a CSV file containing those addresses.

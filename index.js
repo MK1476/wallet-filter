@@ -10,7 +10,7 @@ const minimumBalance = web3.utils.toWei('2', 'ether'); // 2 BNB in wei
 qualifiedAdd = []
 
 // create a new web3 instance
-const web3 = new Web3('https://rpc.ankr.com/bsc/0a6a9c3b24410745a21e0f3cdae8cf0badfed459feacab015de0f55df7b9410c');
+const web3 = new Web3('<API KEY>');//https://rpc.ankr.com/bsc/0a6a9c3b24410745a21e0f3cdae8cf0badfed459feacab015de0f55df7b9410c
 
 
 
