@@ -1,95 +1,140 @@
 const Web3 = require('web3');
-const { toUnixTimestamp } = require('ethjs-unit');
-const QueryString = require('qs');
-const minTimestamp = toUnixTimestamp(new Date() - 30 * 24 * 60 * 60 * 1000);
-const contractABI = [{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":false,"type":"function"}];
-const contractAddress = '0xB8c77482e45F1F44dE1745F52C74426C631bDD52'; // Binance Coin contract address
-
-const minimumBalance = web3.utils.toWei('2', 'ether'); // 2 BNB in wei
-
-qualifiedAdd = []
-
-// create a new web3 instance
-const web3 = new Web3('<API KEY>');//https://rpc.ankr.com/bsc/0a6a9c3b24410745a21e0f3cdae8cf0badfed459feacab015de0f55df7b9410c
+const axios = require('axios');
+const fs = require('fs');
 
 
+// Initialize Web3 instance with Binance Smart Chain Mainnet endpoint
+const web3 = new Web3('https://bsc-dataseed.binance.org/');
 
-web3.eth.getBlockNumber((error, blockNumber) => {
-    if(!error) {
-        console.log("Block number : " + blockNumber);
-    } else {
-        console.log(error);
-    }
-});
+// Set your BSCScan API key
+const API_KEY = '8KRK7GQEFXZN7DD74TQ69QSJMPWTJSK2RQ';
 
-// get a list of accounts and check if they are unlocked
-web3.eth.getAccounts()
-  .then(accounts => {
-    console.log(`Found ${accounts.length} accounts on the Binance Smart Chain:`);
-    console.log(accounts);
-    accounts.forEach(account => {
-      web3.eth.personal.unlockAccount(account)
-        .then(result => {
-          console.log(`${account} is unlocked`);
-        })
-        .catch(error => {
-          console.error(`${account} is locked: ${error}`);
-        });
-    });
-    
+// Define minimum balance in BNB tokens
+const minimumBalance = web3.utils.toWei('2', 'ether');
+
+// Define start and end block numbers to limit transaction history search
+const ONE_MONTH_BLOCKS = 6500; // Assuming ~4 sec block time
+let endBlock;
+
+web3.eth.getBlockNumber()
+  .then((blockNumber) => {
+    endBlock = blockNumber;
+    console.log(`Current block number is ${endBlock}`);
   })
-  .catch(error => {
-    console.error(`Failed to get accounts: ${error}`);
+  .catch((error) => {
+    console.error(`Error getting block number: ${error}`);
   });
+const startBlock = endBlock - ONE_MONTH_BLOCKS;
 
-  async function checkAddresses() {
-    const addresses = await web3.eth.getAccounts();
-    
-    for (const address of addresses) {
-      const balance = await web3.eth.call({
-        to: contractAddress,
-        data: web3.eth.abi.encodeFunctionCall(contractABI[1], [address])
-      });
 
-      if (web3.utils.toBN(balance).gte(web3.utils.toBN(minimumBalance))) {
-        const transactions = await web3.eth.getTransactions({
-          fromBlock: '0x1',
-          toBlock: 'latest',
-          address: address
-        });
+
+// Define function to fetch transaction list for an address
+const fetchTransactions = async (address) => {
+  //console.log("31 : "+endBlock);
   
-        const recentTransaction = transactions.find(tx => tx.timestamp >= minTimestamp);
+  const url = `https://api.bscscan.com/api?module=account&action=txlist&address=${address}&startblock=${startBlock}&endblock=${endBlock}&sort=desc&apikey=${API_KEY}`;
+  const response = await axios.get(url);
+  // console.log(response.data.result)
+  return response.data.result;
   
-        if (recentTransaction) {
+};
 
-          qualifiedAdd.append(address)  
+// Define function to check if an address meets the conditions
+const checkAddress = async (address) => {
+  // Check if the address has a balance of at least 2 BNB tokens
+  const balanceUrl = `https://api.bscscan.com/api?module=account&action=balance&address=${address}&tag=latest&apikey=${API_KEY}`;
+      const balanceResponse = await axios.get(balanceUrl);
+      const balance = balanceResponse.data.result;
+  if (balance < minimumBalance) {
+    return false;
+  }
+  
+   
 
-          console.log(`${address} has conducted at least one transaction in the last month and  has a balance of at least 2 BNB tokens.`);
-        }
+  // Check if the address has conducted at least one transaction in the last month
+  const transactions = await fetchTransactions(address);
+  //console.log("54 :"+transactions)
+  if(transactions!==null)
+  return transactions.length > 0;
+  else
+  return 0;
+};
+
+// Define function to fetch list of all addresses on Binance Smart Chain
+const fetchAddresses = async () => {
+  const url = `https://api.bscscan.com/api?module=account&action=txlist&address=0x0000000000000000000000000000000000001004&startblock=0&endblock=99999999&page=1&offset=10000&sort=asc&apikey=${API_KEY}`;
+  const response = await axios.get(url);
+  const transactions = response.data.result;
+
+  // Next, extract all unique wallet addresses from the transactions list
+  const addresses = new Set();
+
+  const txList = Object.values(transactions);
+
+  for (let i = 0; i < txList.length; i++) {
+    const tx = txList[i];
+      const from = tx.from.toLowerCase();
+      
+      if (!addresses.has(from) && web3.utils.isAddress(from)) {
+        addresses.add(from);
       }
-
     }
 
-
-  }
-
-  function downloadList(addressList) {
-    const csvContent = "data:text/csv;charset=utf-8," + addressList.join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "address_list.csv");
-    document.body.appendChild(link);
-    link.click();
-  }
   
+  //console.log(addresses);
+  //console.log(addresses);
+  return Array.from(addresses);
+};
 
+// Define main function to filter addresses by conditions and download the list
+const downloadAddresses = async () => {
+  const allAddresses = await fetchAddresses();
   
-  checkAddresses();
-  if(qualifiedAdd.length > 0){
-    downloadList(qualifiedAdd)
-  }else{
-    console.log('Addresses are not loading.. Maybe thete is an error please check')
-  }
+  const filteredAddresses = await Promise.all(
+    allAddresses.map(async (address) => {
+      const meetsConditions = await checkAddress(address);
+      return meetsConditions ? address : null;
+    })
+  );
+  const validAddresses = filteredAddresses.filter((address) => address !== null);
+  //downloadList(validAddresses);
+  //console.log("all addresses : "+ allAddresses );
+ // console.log("valid addresses : "+validAddresses);
+  download(validAddresses);
+ 
+};
 
+// Call main function
+downloadAddresses();
 
+async function download(addresses) {
+  const csvContent = addresses.join('\n');
+  fs.writeFileSync('addresses.csv', csvContent);
+  console.log('File downloaded successfully');
+}
+
+function downloadList(addressList) {
+  const csvContent = "data:text/csv;charset=utf-8," + addressList.join("\n");
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", "address_list.csv");
+  document.body.appendChild(link);
+  link.click();
+}
+
+function downloadList1(list, filename) {
+  const element = document.createElement('a');
+  element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(list.join('\n')));
+  element.setAttribute('download', filename);
+  element.style.display = 'none';
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
+}
+
+// if(validAddresses.length > 0){
+//   //downloadList(validAddresses)
+// }else{
+//   console.log('Addresses are not loading.. Maybe thete is an error please check')
+// }
